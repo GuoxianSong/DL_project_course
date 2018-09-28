@@ -86,13 +86,6 @@ def Split():
     np.save('Input/test_label.npy',test_label)
     np.save('Input/std_label.npy', np.std(label, axis=0))
 
-# def LabedStd():
-#     label = np.load('Input/label.npy')
-#
-# Package()
-# Split()
-
-#LabedStd()
 
 
 net_img_size=224

@@ -7,13 +7,13 @@ from skimage.draw import polygon
 import dlib
 
 
-mu_shape = np.load("data/mu_shape.npy")
-mu_exp = np.load("data/mu_exp.npy")
-b_exp = np.load("data/b_exp.npy")
-b_shape = np.load("data/b_shape.npy")
-b_tex = np.load("data/b_tex.npy")
-mu_tex = np.load("data/mu_tex.npy")
-vertexMap_ = np.loadtxt("data/ReduceVerMap.txt", dtype=np.uint).tolist()
+mu_shape = np.load("data/mu_shape_.npy")
+mu_exp = np.load("data/mu_exp_.npy")
+b_exp = np.load("data/b_exp_.npy")
+b_shape = np.load("data/b_shape_.npy")
+b_tex = np.load("data/b_tex_.npy")
+mu_tex = np.load("data/mu_tex_.npy")
+key_index = np.loadtxt('data/keyindex.txt',dtype=np.int).tolist()
 def eulerAnglesToRotationMatrix( theta):
     R_x = np.array([[1, 0, 0],
                     [0, math.cos(theta[0]), -math.sin(theta[0])],
@@ -105,9 +105,11 @@ def Get3Dmm(path):
     dmm_para = [x.strip() for x in dmm_para]
     shape_ = np.array(dmm_para[0].split(), dtype=np.float)
     exp_ = np.array(dmm_para[1].split(), dtype=np.float)
-    eular_ = np.array(dmm_para[4].split(), dtype=np.float)[:3]
-    tex_ = np.array(dmm_para[3].split(), dtype=np.float)
-    return shape_,exp_,eular_,tex_
+    tmp = np.array(dmm_para[2].split(), dtype=np.float)
+    eular_   = tmp[:3]
+    translate_ = tmp[3:5]
+    scale_ = tmp[5]
+    return shape_,exp_,eular_,translate_,scale_
 
 def CMOSLmk():
     detector = dlib.get_frontal_face_detector()
@@ -165,7 +167,7 @@ def RidgeFit3D(X, Y):
     return ans[0],ans[1:]
 
 def CreateObj(points,name):
-    path = "data/resize_uv.obj"
+    path = "data/face.obj"
     with open(path) as f:
         content = f.readlines()
     content = [x.strip() for x in content]
@@ -180,7 +182,5 @@ def CreateObj(points,name):
             f.write(content[i]+"\n")
     f.close()
 
-def Assemble(points):
-    tmp = np.copy(points)
-    points[vertexMap_, :] = tmp
-    return points
+def Landmark(points):
+    return points[key_index,:]
