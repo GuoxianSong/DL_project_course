@@ -1,0 +1,13 @@
+The 'CoarseData' folder contains 3131 subfolders. In every subfolder, there are 30 samples augmented from a image by varying poses and expressions.
+
+ *.jpg s are the augmented images.
+
+ *.txt s are the corresponding parameters. 
+
+ The parameters are identity parameter (100 dims), expression parameter (79 dims) and pose parameter (6 dims, 3 for euler angle, 2 for tramslation and 1 for scale). 
+
+ For identity pca base we use Basel Face Model (http://faces.cs.unibas.ch/bfm/?nav=1-2&id=downloads).
+
+ The 'Exp_Pca.bin' is the expression pca file. 
+
+ 'Sample_code.cpp' contains sample functions to read the expression pca file and convert euler angles to rotation matrix. 
