@@ -11,10 +11,15 @@ HParams = namedtuple('HParams',
                      'momentum, finetune')
 
 class ResNet(object):
-    def __init__(self, hp, images, labels, global_step, name=None, reuse_weights=False):
+    def __init__(self, hp, images, SHAPE,EXP,EULAR,T,R, global_step, name=None, reuse_weights=False):
         self._hp = hp # Hyperparameters
         self._images = images # Input images
-        self._labels = labels # Input labels
+        self._exps = EXP
+        self._shapes = SHAPE
+        self._eulars = EULAR
+        self._ts = T
+        self._rs = R
+
         self._global_step = global_step
         self._name = name
         self._reuse_weights = reuse_weights
@@ -24,9 +29,47 @@ class ResNet(object):
         self._flops = 0
         self._weights = 0
 
+        mu_shape = np.load("data/mu_shape_.npy")
+        mu_exp = np.load("data/mu_exp_.npy")
+        b_exp = np.load("data/b_exp_.npy")
+        b_shape = np.load("data/b_shape_.npy")
 
-    def build_tower(self, images, labels):
+        label_mean = np.load("Input/mean_label.npy")
+        label_std   = np.load("Input/std_label.npy")
+
+        # b_tex = np.load("data/b_tex_.npy")
+        # mu_tex = np.load("data/mu_tex_.npy")
+        key_index = np.loadtxt('data/keyindex.txt', dtype=np.int).tolist()
+
+        self.mu_exp = tf.constant(mu_exp,shape=[1, 3 * 53215],dtype = tf.float32)
+        self.b_exp = tf.constant(b_exp, shape=[79, 3 * 53215],dtype = tf.float32)
+        self.b_shape = tf.constant(b_shape, shape=[100, 3 * 53215],dtype = tf.float32)
+        self.mu_shape = tf.constant(mu_shape,shape=[1, 3 * 53215],dtype = tf.float32)
+        self.label_mean =tf.constant(label_mean,shape=[1,185],dtype = tf.float32)
+        self.label_std = tf.constant(label_std, shape=[1,185],  dtype=tf.float32)
+    def build_tower(self, images, shapes,exps,eulars,ts,ss):
         print('Building model')
+
+        def Points(exp, shape, eular, t, s):
+            tmp = tf.reshape(self.mu_exp + self.mu_shape + tf.matmul(tf.reshape(exp, (1, 79)),self.b_exp) + tf.matmul(
+                tf.reshape(shape, (1, 100)), self.b_shape), (53215, 3)) * s
+
+            R_x = tf.reshape(tf.stack([[1, 0, 0],
+                                       [0, tf.cos(eular[0]), -tf.sin(eular[0])],
+                                       [0, tf.sin(eular[0]), tf.cos(eular[0])]
+                                       ]), (3, 3))
+            R_y = tf.reshape(tf.stack([[tf.cos(eular[1]), 0, tf.sin(eular[1])],
+                                       [0, 1, 0],
+                                       [-tf.sin(eular[1]), 0, tf.cos(eular[1])]
+                                       ]), (3, 3))
+            R_z = tf.reshape(tf.stack([[tf.cos(eular[2]), -tf.sin(eular[2]), 0],
+                                       [tf.sin(eular[2]), tf.cos(eular[2]), 0],
+                                       [0, 0, 1]
+                                       ]), (3, 3))
+            R = tf.matmul(R_z, tf.matmul(R_y, R_x))
+            tmp = tf.slice(tf.matmul(tmp, R), [0, 0], [-1, 2]) + t
+            return tmp
+
         # filters = [128, 128, 256, 512, 1024]
         filters = [64, 64, 128, 256, 512]
         kernels = [7, 3, 3, 3, 3]
@@ -60,21 +103,73 @@ class ResNet(object):
         with tf.variable_scope('logits') as scope:
             print('\tBuilding unit: %s' % scope.name)
             x = tf.reduce_mean(x, [1, 2])
-            x = self._fc(x, self._hp.num_output)
-        logits = x
-        loss = tf.reduce_mean(tf.square(logits - labels))*0.001
-        return logits, loss
+            x =self._fc(x, 185)
+            logits_ = x*self.label_std+self.label_mean
+        logits_shape =   tf.slice(logits_,[0,0],[-1,100]) #@self._fc(x, 100)
+        logits_exp= tf.slice(logits_,[0,100],[-1,79])#self._fc(x, 79)
+        logits_eular = tf.slice(logits_,[0,179],[-1,3])#self._fc(x, 3)
+        logits_t = tf.slice(logits_,[0,182],[-1,2])#self._fc(x, 2)
+        logits_s =tf.slice(logits_,[0,184],[-1,1]) #self._fc(x, 1)
+
+        shape_loss = tf.reduce_mean(tf.square((logits_shape - shapes)*0.0001))
+        exp_loss = tf.reduce_mean(tf.square((logits_exp - exps)*0.0001))
+        eular_loss =tf.reduce_mean(tf.square(logits_eular - eulars))*100
+        t_loss = tf.reduce_mean(tf.square(logits_t - ts))/10
+        s_loss = tf.reduce_mean(tf.abs(logits_s - ss))*1000
+        parameter_loss =eular_loss+s_loss+t_loss #exp_loss+shape_loss+
+
+        #proj_pose_points =tf.map_fn( lambda x: Points(x[0],x[1],x[2],x[3],x[4] ),
+        #                             [exps,shapes,logits_eular ,logits_t,logits_s],dtype=tf.float32)
+        proj_geo_points = tf.map_fn(lambda x: Points(x[0], x[1], x[2], x[3], x[4]),
+                                     [logits_exp, logits_shape, eulars ,ts,ss], dtype=tf.float32)
+
+        proj_tru_points = tf.map_fn( lambda x: Points(x[0],x[1],x[2],x[3],x[4] ),[exps,shapes,eulars ,ts,ss],dtype=tf.float32)
+
+        geo_loss = tf.reduce_mean(tf.square((proj_geo_points - proj_tru_points)))
+        pose_loss = 0#tf.reduce_mean(tf.square((proj_pose_points - proj_tru_points)))
+        lambda_ =0.5# geo_loss/(geo_loss+pose_loss)
+        points_loss =(lambda_)*pose_loss+(1-lambda_)*geo_loss
+        loss = points_loss+parameter_loss
+
+
+
+        # tf.map_fn( lambda x: self.Points(x[0],x[1],x[2],x[3],x[4] ),(logits_exp,logits_shape,logits_eular ,logits_t,logits_s),dtype=tf.float32)
+        return [logits_exp,logits_shape,logits_eular ,logits_t,logits_s], loss,  shape_loss, exp_loss,eular_loss,s_loss,t_loss,points_loss,geo_loss,pose_loss
+
+
+
 
 
     def build_model(self):
         # Split images and labels into (num_gpus) groups
         images = tf.split(self._images, num_or_size_splits=self._hp.num_gpus, axis=0)
-        labels = tf.split(self._labels, num_or_size_splits=self._hp.num_gpus, axis=0)
+        exps = tf.split(self._exps, num_or_size_splits=self._hp.num_gpus, axis=0)
+
+        eulars = tf.split(self._eulars, num_or_size_splits=self._hp.num_gpus, axis=0)
+        shapes = tf.split(self._shapes, num_or_size_splits=self._hp.num_gpus, axis=0)
+        ts = tf.split(self._ts, num_or_size_splits=self._hp.num_gpus, axis=0)
+        rs = tf.split(self._rs, num_or_size_splits=self._hp.num_gpus, axis=0)
+
 
         # Build towers for each GPU
         self._logits_list = []
         self._loss_list = []
 
+        self.shape_logits_list= []
+        self.exp_logits_list= []
+        self.eular_logits_list= []
+        self.t_logits_list= []
+        self.s_logits_list= []
+
+
+        self._shape_loss_list = []
+        self._exp_loss_list = []
+        self._eular_loss_list = []
+        self._s_loss_list = []
+        self._t_loss_list = []
+        self._points_loss_list = []
+        self._geo_loss_list = []
+        self._pose_loss_list = []
 
         for i in range(self._hp.num_gpus):
             with tf.device('/GPU:%d' % i), tf.variable_scope(tf.get_variable_scope()):
@@ -82,15 +177,51 @@ class ResNet(object):
                     print('Build a tower: %s' % scope)
                     if self._reuse_weights or i > 0:
                         tf.get_variable_scope().reuse_variables()
-                    logits, loss = self.build_tower(images[i], labels[i])
-                    self._logits_list.append(logits)
+                    tf_mu_exp = tf.Variable(self.mu_exp,trainable=False)
+                    tf_mu_shape = tf.Variable(self.mu_shape, trainable=False)
+                    tf_b_exp = tf.Variable(self.b_exp, trainable=False)
+                    tf_b_shape = tf.Variable(self.b_shape, trainable=False)
+
+                    logits, loss, shape_loss, exp_loss,eular_loss,s_loss,t_loss,points_loss,geo_loss,pose_loss = self.build_tower(images[i],shapes[i], exps[i],eulars[i],ts[i],rs[i])#,tf_mu_exp,tf_mu_shape,tf_b_exp,tf_b_shape)
+                    self.shape_logits_list.append(logits[0])
+                    self.exp_logits_list.append(logits[1])
+                    self.eular_logits_list.append(logits[2])
+                    self.t_logits_list.append(logits[3])
+                    self.s_logits_list.append(logits[4])
+
+
+
                     self._loss_list.append(loss)
+
+                    self._shape_loss_list.append(shape_loss)
+                    self._exp_loss_list.append(exp_loss)
+                    self._eular_loss_list.append(eular_loss)
+                    self._s_loss_list.append(s_loss)
+                    self._t_loss_list.append(t_loss)
+                    self._points_loss_list.append(points_loss)
+                    self._geo_loss_list.append(geo_loss)
+                    self._pose_loss_list.append(pose_loss)
 
 
         # Merge losses, accuracies of all GPUs
         with tf.device('/CPU:0'):
-            self.logits = tf.concat(self._logits_list, axis=0, name="logits")
+            self.shape_logits = tf.concat(self.shape_logits_list, axis=0)
+            self.exp_logits = tf.concat(self.exp_logits_list, axis=0)
+            self.eular_logits = tf.concat(self.eular_logits_list, axis=0)
+            self.t_logits = tf.concat(self.t_logits_list, axis=0)
+            self.s_logits = tf.concat(self.s_logits_list, axis=0)
+
             self.loss = tf.reduce_mean(self._loss_list, name="mse")
+            self.shape_loss = tf.reduce_mean(self._shape_loss_list)
+            self.exp_loss= tf.reduce_mean(self._exp_loss_list)
+            self.eular_loss = tf.reduce_mean(self._eular_loss_list)
+            self.s_loss= tf.reduce_mean(self._s_loss_list)
+            self.t_loss=tf.reduce_mean(self._t_loss_list)
+            self.points_loss=tf.reduce_mean(self._points_loss_list)
+
+            self.geo_loss=tf.reduce_mean(self._geo_loss_list)
+            self.pose_loss=tf.reduce_mean(self._pose_loss_list)
+
             tf.summary.scalar((self._name+"/" if self._name else "") + "mse", self.loss)
 
 
