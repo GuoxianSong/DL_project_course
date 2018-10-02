@@ -6,10 +6,12 @@ import time
 import tensorflow as tf
 import numpy as np
 import resnet
+import cv2
 
 
+tf.app.flags.DEFINE_boolean('is_CustomTest', True, """If is for custom tes""")
 tf.app.flags.DEFINE_boolean('is_Server', True, """If is for server""")
-tf.app.flags.DEFINE_boolean('is_Train', True, """If is for training""")
+tf.app.flags.DEFINE_boolean('is_Train', False, """If is for training""")
 tf.app.flags.DEFINE_boolean('is_Simple',False,"""Test on simple model""")
 # Network Configuration
 tf.app.flags.DEFINE_integer('batch_size', 256, """Number of images to process in a batch.""")
@@ -146,13 +148,32 @@ def train():
         print("data done")
 
 
-        if(FLAGS.is_Train==False):
+        if(FLAGS.is_CustomTest==True):
+            batch_data = (np.load('Input/gx.npy')-mean_data)/255.0
+            batch_labels = np.zeros((len(batch_data),185))
+            tmp = np.zeros((len(batch_data),185))
+            shape_logits, exp_logits, eular_logits, t_logits, s_logits = sess.run(
+                [network_train.shape_logits, network_train.exp_logits,
+                 network_train.eular_logits, network_train.t_logits,
+                 network_train.s_logits, ], \
+                feed_dict={network_train.is_train: False, X: batch_data,
+                           SHAPE: batch_labels[:, :100], EXP: batch_labels[:, 100:179],
+                           EULAR: batch_labels[:, 179:182], T: batch_labels[:, 182:184],
+                           S: batch_labels[:, 184]})
+            tmp[:,0:100] = np.array(exp_logits)
+            tmp[:,100:179] = np.array(shape_logits)
+            tmp[:,179:182] = np.array(eular_logits)
+            tmp[:,182:184] = np.array(t_logits)
+            tmp[:,184][:,None] = np.array(s_logits)
+            np.savetxt("tmp/gx.txt", tmp)
+
+        elif(FLAGS.is_Train==False):
 
             max_iteration = int(len(test_label)/FLAGS.batch_size )
             print("max iteration is " +str(max_iteration))
             loss_=0
             tmp = np.zeros([185])
-            for i in range(1):
+            for i in range(10):
                 print(i)
                 offset = (i * FLAGS.batch_size) % (test_data.shape[0] - FLAGS.batch_size)
                 batch_data = test_data[offset:(offset + FLAGS.batch_size), :, :, :]
@@ -173,7 +194,9 @@ def train():
 
                 #loss_+=loss_value[0]
             #print("test loss = " +str(loss_/ max_iteration))
-            np.savetxt("tmp/0.txt",tmp+mean_label)
+                np.savetxt("tmp/"+str(i)+".txt",tmp)
+                fig = np.array((batch_data[0,:,:,:]*255+mean_data),dtype=np.uint8)
+                cv2.imwrite("tmp/"+str(i)+".jpg",fig)
 
         else:
 

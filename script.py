@@ -5,12 +5,13 @@ import cv2
 # shape_,exp_,eular_,translate_,scale_=ults.Get3Dmm("Sample/afw_134212_1_aug_17.txt")
 # landmark = np.loadtxt("Sample/afw_134212_1_aug_17_landmark.txt")
 # image= cv2.imread("Sample/afw_134212_1_aug_17.jpg")
-
-tmp = np.loadtxt("tmp/0.txt")
-points = ults.CalculateDense(tmp[0:100],tmp[100:179])
-R = ults.eulerAnglesToRotationMatrix(tmp[179:182])
-points =np.matmul(points,R)
-ults.CreateObj(points/10000,'fake')
+tmp_ = np.loadtxt("tmp/gx.txt")
+for i in range(len(tmp_)):
+    tmp =tmp_[i,:]
+    points = ults.CalculateDense(tmp[0:100],tmp[100:179])
+    R = ults.eulerAnglesToRotationMatrix(tmp[179:182])
+    points =np.matmul(points,R)
+    ults.CreateObj(points/10000,"gx/"+str(i))
 
 
 net_img_size = 224

@@ -1,3 +1,15 @@
+#Data Set
+Pls refer to https://github.com/Juyong/3DFace
+Here just use CoarseData
+
+#Train
+First need to process dataset, the function is in Network/DataInput, Run() + Package() + Split()
+Second to run train in the Network/train.py
+
+# Result
+https://docs.google.com/presentation/d/1m2k5g60XOoDel12DseY8c7U22uo7WdEyiM7pHKjZjKk/edit?usp=sharing
+
+
 The 'CoarseData' folder contains 3131 subfolders. In every subfolder, there are 30 samples augmented from a image by varying poses and expressions.
 
  *.jpg s are the augmented images.

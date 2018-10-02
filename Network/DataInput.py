@@ -104,7 +104,7 @@ def Split():
 
 
 net_img_size = 224
-def Normalize2(image, landmark_, translation, scale):
+def Normalize2(image, landmark_, translation=np.array([0,0]), scale=0):
     xmin = np.min(landmark_[:, 0])
     xmax = np.max(landmark_[:, 0])
     ymin = np.min(landmark_[:, 1])
@@ -153,7 +153,29 @@ def Get3Dmm(path):
     scale_ = tmp[5]
     return shape_,exp_,eular_,translate_,scale_
 
+def Custom():
+    cap = cv2.VideoCapture('Input/gx.MOV')
+    sample_num = 150
+    M = cv2.getRotationMatrix2D((1920 / 2, 1080 / 2), 270, 1)
+    predictor, detector = LoadBase()
+    index_=0
+    data = np.zeros((sample_num,224,224,3))
+    for i in range(sample_num):
+        ret,frame = cap.read()
+        frame = cv2.warpAffine(frame, M, (1920, 1080))
+        gray_ = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
+        dets = detector(gray_, 1)
+        shape = predictor(gray_, dets[0])
+        tmp = SaveLandmark(shape)
+        res,_,_ = Normalize2(frame,tmp)
+        data[i,:,:,:] = res
+        cv2.imwrite('tmp/gx/'+str(index_)+'.jpg', frame)
+        print(index_)
+        index_+=1
+    cap.release()
+    np.save("Input/gx.npy",data)
 
-Run()
-Package()
-Split()
+Custom()
+# Run()
+# Package()
+# Split()
